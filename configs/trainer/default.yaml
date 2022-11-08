@@ -5,8 +5,10 @@ max_epochs: 100
 enable_progress_bar: True
 accelerator: auto
 devices: 1
-precision: 32
+precision: 16
 check_val_every_n_epoch: 1
+limit_train_batches: 50
+limit_val_batches: 10
 
 # Interpolated
 default_root_dir: ${paths.output_dir}

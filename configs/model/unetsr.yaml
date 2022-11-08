@@ -28,7 +28,7 @@ optimizer:
 sched_conf:
   mattstools:
     name: warmup
-    num_steps: 512
+    num_steps: 50
   lightning:
     monitor: valid/loss
     interval: step

@@ -1,7 +1,8 @@
 """
-A collection of misculaneous classes and functions useful for the training process
+A collection of misculaneous functions usefull for the lighting/hydra template
 """
 
+from pathlib import Path
 import rich
 import rich.tree
 import rich.syntax
@@ -23,7 +24,7 @@ def print_config_tree(
         "datamodule",
         "model",
         "callbacks",
-        "logger",
+        "loggers",
         "trainer",
         "paths",
     ),
