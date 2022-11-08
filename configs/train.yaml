@@ -1,0 +1,17 @@
+# Order indicates overwriting
+defaults:
+  - _self_
+  - trainer: default.yaml
+  - model: unetsr.yaml
+  - datamodule: celeba.yaml
+  - loggers: default.yaml
+  - hydra: default.yaml
+  - paths: default.yaml
+  - callbacks: default.yaml
+
+project_name: super_resolution # Determines output directory path
+network_name: ${now:%Y-%m-%d}_${now:%H-%M-%S} # Used for both saving and wandb
+train: True # Set False to skip model training
+test: True # Run test using best model from checkpoint callback
+ckpt_path: null # Checkpoint path to resume training
+seed: null # For reproducibility
