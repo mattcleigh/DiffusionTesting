@@ -118,10 +118,10 @@ class DiffusionGenerator(pl.LightningModule):
         time_embedding_dim: int,
         cosine_config: Mapping,
         diff_shedule_config: Mapping,
-        time_embed_config: Mapping,
         unet_config: Mapping,
         optimizer: partial,
-        sched_conf: dict,
+        sched_config: Mapping,
+        ema_sync: float = 0.999,
         loss_name: str = "mse",
     ) -> None:
         """
@@ -134,8 +134,9 @@ class DiffusionGenerator(pl.LightningModule):
             time_embed_config: Keyword arguments for the Dense time embedder
             unet_config: Keyword arguments for the UNet network
             optimizer: Partially initialised optimizer
-            sched_conf: The config for how to apply the scheduler
+            sched_config: The config for how to apply the scheduler
             loss_name: Name of the loss function to use for noise estimation
+            ema_sync: How fast the ema network syncs with the given one
         """
         super().__init__()
         self.save_hyperparameters(logger=False)
@@ -146,20 +147,24 @@ class DiffusionGenerator(pl.LightningModule):
         self.inpt_dim = inpt_dim
         self.cosine_config = cosine_config
         self.diff_shedule_config = diff_shedule_config
+        self.ema_sync = ema_sync
         self.register_buffer("fixed_noise", T.randn((32, *self.inpt_dim)))
-
-        # The dense network used to embed the time information
-        self.time_embed = DenseNetwork(
-            inpt_dim=time_embedding_dim,
-            **time_embed_config,
-        )
 
         # The denoising UNet
         self.unet = UNet(
             inpt_size=inpt_dim[1:],
             inpt_channels=inpt_dim[0],
             outp_channels=inpt_dim[0],
-            ctxt_dim=self.time_embed.outp_dim,
+            ctxt_dim=time_embedding_dim,
+            **unet_config,
+        )
+
+        # A copy of the unet which will sync with an exponential moving average
+        self.ema_unet = UNet(
+            inpt_size=inpt_dim[1:],
+            inpt_channels=inpt_dim[0],
+            outp_channels=inpt_dim[0],
+            ctxt_dim=time_embedding_dim,
             **unet_config,
         )
 
@@ -174,17 +179,21 @@ class DiffusionGenerator(pl.LightningModule):
         clean image using the
         """
 
-        # Use the unet to esitmate the noise present in the image
-        pred_noises = self.unet(
-            noisy_images,
-            ctxt=self.time_embed(
-                cosine_encoding(
-                    diffusion_times,
-                    out_dim=self.time_embedding_dim,
-                    **self.cosine_config,
-                )
-            ),
+        # Use the appropriate network for training or validation
+        if self.training:
+            network = self.unet
+        else:
+            network = self.ema_unet
+
+        # Encode the times
+        encoded_times = cosine_encoding(
+            diffusion_times,
+            out_dim=self.time_embedding_dim,
+            **self.cosine_config,
         )
+
+        # Use the selected network to esitmate the noise present in the image
+        pred_noises = network(noisy_images, ctxt=encoded_times)
 
         # Apply the DDIM method to estimate the cleaned up image
         pred_images = (noisy_images - noise_rates * pred_noises) / signal_rates
@@ -221,6 +230,7 @@ class DiffusionGenerator(pl.LightningModule):
 
     def training_step(self, sample: tuple, _batch_idx: int) -> T.Tensor:
         noise_loss, image_loss = self._shared_step(sample)
+        self._sync_ema_network()
         self.log("train/noise_loss", noise_loss)
         self.log("train/image_loss", image_loss)
         return noise_loss
@@ -231,12 +241,22 @@ class DiffusionGenerator(pl.LightningModule):
         self.log("valid/image_loss", image_loss)
         return noise_loss
 
+    def _sync_ema_network(self):
+        """Updates the Exponential Moving Average Network"""
+        for weight, ema_weight in zip(
+            self.unet.parameters(), self.ema_unet.parameters()
+        ):
+            ema_weight.data.copy_(
+                self.ema_sync * ema_weight.data + (1.0 - self.ema_sync) * weight.data
+            )
+
     def generate(
         self,
         initial_noise: Optional[T.Tensor] = None,
         n_steps: int = 50,
         keep_all: bool = False,
         num_images: int = 1,
+        clip_predictions=True,
     ) -> Tuple[T.Tensor, list]:
         """Apply the full reverse process to noise to generate a batch of images
 
@@ -248,6 +268,9 @@ class DiffusionGenerator(pl.LightningModule):
                 Can be memory heavy for large batches
             num_images: How many images to generate
                 Ignored if initial_noise is provided
+            clip_predictions: Clip the predicted image at each stage too [-1, 1]
+                Stabalises the generation and improves quality as long as the
+                images are preprocessed to [-1, 1]
         """
 
         # Get the initial noise for generation and the number of images
@@ -277,6 +300,10 @@ class DiffusionGenerator(pl.LightningModule):
             signal_rates, noise_rates = diffusion_shedule(
                 diff_times.view(-1, 1, 1, 1), **self.diff_shedule_config
             )
+
+            ## Update the noisy immages using the reverse ddim step
+            if clip_predictions:
+                pred_images.clamp_(-1, 1)
             noisy_images = signal_rates * pred_images + noise_rates * pred_noises
 
             # Seperate the image out into the noise and final prediction
@@ -323,7 +350,7 @@ class DiffusionGenerator(pl.LightningModule):
 
         # Use mattstools to initialise the scheduler (cyclic-epoch sync)
         sched = get_sched(
-            self.hparams.sched_conf.mattstools,
+            self.hparams.sched_config.mattstools,
             opt,
             steps_per_epoch=len(self.trainer.datamodule.train_dataloader()),
             max_epochs=self.trainer.max_epochs,
@@ -332,5 +359,5 @@ class DiffusionGenerator(pl.LightningModule):
         # Return the dict for the lightning trainer
         return {
             "optimizer": opt,
-            "lr_scheduler": {"scheduler": sched, **self.hparams.sched_conf.lightning},
+            "lr_scheduler": {"scheduler": sched, **self.hparams.sched_config.lightning},
         }

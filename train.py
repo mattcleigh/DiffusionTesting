@@ -29,12 +29,6 @@ def main(cfg: DictConfig) -> None:
     log.info("Instantiating the data module")
     datamodule = hydra.utils.instantiate(cfg.datamodule)
 
-    log.info("Instantiating all callbacks")
-    callbacks = instantiate_collection(cfg.callbacks)
-
-    log.info("Instantiating the loggers")
-    loggers = instantiate_collection(cfg.loggers)
-
     log.info("Instantiating the model")
     model = hydra.utils.instantiate(
         cfg.model,
@@ -42,6 +36,12 @@ def main(cfg: DictConfig) -> None:
         ctxt_dim=datamodule.get_ctxt_shape(),
     )
     log.info(model)
+
+    log.info("Instantiating all callbacks")
+    callbacks = instantiate_collection(cfg.callbacks)
+
+    log.info("Instantiating the loggers")
+    loggers = instantiate_collection(cfg.loggers)
 
     log.info("Instantiating the trainer")
     trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=loggers)

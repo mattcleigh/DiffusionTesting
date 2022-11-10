@@ -1,20 +1,16 @@
 _target_: src.models.diffusion.DiffusionGenerator
 
+# How time information is injected into the UNet
+time_embedding_dim: 64
 cosine_config:
   min_value: 0
   max_value: 1
   frequency_scaling: exponential
 
+# How quickly the noise takes over the image
 diff_shedule_config:
   max_sr: 0.02
   min_sr: 0.95
-
-# How time information is injected into the UNet
-time_embedding_dim: 64
-time_embed_config:
-  num_blocks: 2
-  hddn_dim: 128
-  outp_dim: 128
 
 # The configuration of the UNet
 unet_config:
@@ -23,11 +19,15 @@ unet_config:
   start_channels: 32
   max_channels: 128
   resnet_kwargs:
-    act: lrlu
+    act: silu
     nrm_groups: 32
   attn_kwargs:
     num_heads: 4
     nrm_groups: 32
+  ctxt_embed_kwargs:
+    hddn_dim: 128
+    outp_dim: 128
+    act_h: silu
 
 # Passed to mattstools get_loss_fn
 loss_name: mae
@@ -40,10 +40,10 @@ optimizer:
   weight_decay: 1.0e-4
 
 # Config dicts to pass to mattstools and pytorch lightning
-sched_conf:
+sched_config:
   mattstools:
     name: warmup
-    num_steps: 5000
+    num_steps: 10000
   lightning:
     monitor: valid/noise_loss
     interval: step
