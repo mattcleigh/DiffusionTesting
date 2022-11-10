@@ -243,12 +243,14 @@ class DiffusionGenerator(pl.LightningModule):
 
     def _sync_ema_network(self):
         """Updates the Exponential Moving Average Network"""
-        for weight, ema_weight in zip(
-            self.unet.parameters(), self.ema_unet.parameters()
-        ):
-            ema_weight.data.copy_(
-                self.ema_sync * ema_weight.data + (1.0 - self.ema_sync) * weight.data
-            )
+        with T.no_grad():
+            for params, ema_params in zip(
+                self.unet.parameters(), self.ema_unet.parameters()
+            ):
+                ema_params.data.copy_(
+                    self.ema_sync * ema_params.data
+                    + (1.0 - self.ema_sync) * params.data
+                )
 
     def generate(
         self,

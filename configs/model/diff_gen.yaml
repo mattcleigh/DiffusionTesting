@@ -1,7 +1,10 @@
 _target_: src.models.diffusion.DiffusionGenerator
 
-# How time information is injected into the UNet
 time_embedding_dim: 64
+loss_name: mae
+ema_sync: 0.999
+
+# How time information is injected into the UNet
 cosine_config:
   min_value: 0
   max_value: 1
@@ -28,9 +31,6 @@ unet_config:
     hddn_dim: 128
     outp_dim: 128
     act_h: silu
-
-# Passed to mattstools get_loss_fn
-loss_name: mae
 
 # Full configuration for the model optimizer
 optimizer:
