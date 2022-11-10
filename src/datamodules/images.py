@@ -25,6 +25,7 @@ class ImageDataModule(pl.LightningDataModule):
             loader_kwargs: Keyword arguments for the dataloader
         """
         super().__init__()
+        self.save_hyperparameters()
 
         # Store the class attributes
         self.dataset_name = dataset_name

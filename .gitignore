@@ -1,6 +1,5 @@
 # Directories
 __pycache__
-data/
 docker/
 logs/
 outputs/

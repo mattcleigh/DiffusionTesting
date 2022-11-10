@@ -44,9 +44,7 @@ class UNetSuperResolution(pl.LightningModule):
             sched_conf: The config for how to apply the scheduler
         """
         super().__init__()
-
-        # Save all hyperparameters
-        self.save_hyperparameters(ignore=["loss_fn"])
+        self.save_hyperparameters(logger=False)
 
         # Save specific class attributes
         self.loss_fn = loss_fn

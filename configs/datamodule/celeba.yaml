@@ -14,7 +14,7 @@ val_transforms: # Same as above but without random augmentations
 
 loader_kwargs:
   pin_memory: true
-  batch_size: 32
+  batch_size: 64
   num_workers: 4
   drop_last: True
 
