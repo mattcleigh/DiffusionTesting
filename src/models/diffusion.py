@@ -1,11 +1,13 @@
 from functools import partial
 import math
 from typing import Mapping, Optional, Tuple
+import PIL.Image
 
 from tqdm import tqdm
-import numpy as np
 
 import torch as T
+from torchvision.utils import make_grid
+
 import pytorch_lightning as pl
 
 from mattstools.cnns import UNet
@@ -149,7 +151,6 @@ class DiffusionGenerator(pl.LightningModule):
         # The dense network used to embed the time information
         self.time_embed = DenseNetwork(
             inpt_dim=time_embedding_dim,
-            outp_dim=time_embedding_dim,
             **time_embed_config,
         )
 
@@ -180,7 +181,7 @@ class DiffusionGenerator(pl.LightningModule):
                 cosine_encoding(
                     diffusion_times,
                     out_dim=self.time_embedding_dim,
-                    **self.cosine_config
+                    **self.cosine_config,
                 )
             ),
         )
@@ -201,7 +202,9 @@ class DiffusionGenerator(pl.LightningModule):
 
         # Sample uniform random diffusion times and get the rates
         diffusion_times = T.rand(size=(len(images), 1), device=self.device)
-        signal_rates, noise_rates = diffusion_shedule(diffusion_times.view(-1, 1, 1, 1), **self.diff_shedule_config)
+        signal_rates, noise_rates = diffusion_shedule(
+            diffusion_times.view(-1, 1, 1, 1), **self.diff_shedule_config
+        )
 
         # Mix the signal and noise according to the diffusion equation
         noisy_images = signal_rates * images + noise_rates * noises
@@ -271,7 +274,9 @@ class DiffusionGenerator(pl.LightningModule):
 
             # Make a single backward step using the predicted clean image
             diff_times = T.ones((num_images, 1), device=self.device) - step * step_size
-            signal_rates, noise_rates = diffusion_shedule(diff_times.view(-1, 1, 1, 1), **self.diff_shedule_config)
+            signal_rates, noise_rates = diffusion_shedule(
+                diff_times.view(-1, 1, 1, 1), **self.diff_shedule_config
+            )
             noisy_images = signal_rates * pred_images + noise_rates * pred_noises
 
             # Seperate the image out into the noise and final prediction
@@ -292,15 +297,20 @@ class DiffusionGenerator(pl.LightningModule):
         if wandb.run is None:
             return
 
-        # Get the generated samples, convert to numpy
-        outputs, _ = self.generate(initial_noise=self.fixed_noise, n_steps=50)
-        outputs = to_np(outputs)
+        # Get the generated samples
+        outputs, _ = self.generate(initial_noise=self.fixed_noise, n_steps=64)
 
-        # Create the wandb table amd add the data
+        # Create the wandb table and add the data
         gen_table = wandb.Table(columns=["idx", "output"])
         for idx, out in enumerate(outputs):
+
+            # Manually scale the image (expecting values normalised between -1, 1)
+            out = make_grid(out, value_range=(-1, 1), normalize=True)
+            out = out.mul(255).clamp(0, 255).byte().permute(1, 2, 0).cpu().numpy()
+            out = PIL.Image.fromarray(out)
+
             img_id = str(idx)
-            gen_table.add_data(img_id, wandb.Image(np.transpose(out, (1, 2, 0))))
+            gen_table.add_data(img_id, wandb.Image(out))
 
         # Log the table
         wandb.run.log({"generated": gen_table}, commit=False)

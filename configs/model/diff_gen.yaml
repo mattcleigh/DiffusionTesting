@@ -14,11 +14,12 @@ time_embedding_dim: 64
 time_embed_config:
   num_blocks: 2
   hddn_dim: 128
+  outp_dim: 128
 
 # The configuration of the UNet
 unet_config:
-  min_size: 4
-  attn_below: 4
+  min_size: 8
+  attn_below: 16
   start_channels: 32
   max_channels: 128
   resnet_kwargs:
@@ -29,20 +30,20 @@ unet_config:
     nrm_groups: 32
 
 # Passed to mattstools get_loss_fn
-loss_name: mse
+loss_name: mae
 
 # Full configuration for the model optimizer
 optimizer:
   _target_: torch.optim.AdamW
   _partial_: true
-  lr: 1.0e-3
-  weight_decay: 1.0e-3
+  lr: 5.0e-4
+  weight_decay: 1.0e-4
 
 # Config dicts to pass to mattstools and pytorch lightning
 sched_conf:
   mattstools:
     name: warmup
-    num_steps: 512
+    num_steps: 5000
   lightning:
     monitor: valid/noise_loss
     interval: step

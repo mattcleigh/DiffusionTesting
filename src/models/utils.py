@@ -33,19 +33,14 @@ def log_wandb_upscale_images(
     # Get the network outputs
     outputs = model(in_images, ctxt)
 
-    # Convert to numpy
-    inputs = to_np(in_images)
-    outputs = to_np(outputs)
-    truth = to_np(images)
-
     # Add all data to the table
-    for idx, (i, o, t) in enumerate(zip(inputs, outputs, truth)):
+    for idx, (i, o, t) in enumerate(zip(in_images, outputs, images)):
         img_id = str(idx)
         test_table.add_data(
             img_id,
-            wandb.Image(np.transpose(i, (1, 2, 0))),
-            wandb.Image(np.transpose(o, (1, 2, 0))),
-            wandb.Image(np.transpose(t, (1, 2, 0))),
+            wandb.Image(i.permute(1, 2, 0)),
+            wandb.Image(o.permute(1, 2, 0)),
+            wandb.Image(t.permute(1, 2, 0)),
         )
 
     # Log the table
