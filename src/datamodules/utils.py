@@ -19,7 +19,9 @@ def preprocessing(
     preproc = []
     postproc = []
     if augment:
-        preproc.append(tv.transforms.AutoAugment(tv.transforms.AutoAugmentPolicy.IMAGENET))
+        preproc.append(
+            tv.transforms.AutoAugment(tv.transforms.AutoAugmentPolicy.IMAGENET)
+        )
     if to_tens:
         preproc.append(tv.transforms.ToTensor())
     if rand_rotate:

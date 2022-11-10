@@ -3,7 +3,7 @@ _target_: src.models.unetsr.UNetSuperResolution
 upscale_factor: 8
 
 unet_kwargs:
-  min_size: 18
+  min_size: 16
   attn_below: 32
   start_channels: 32
   max_channels: 128

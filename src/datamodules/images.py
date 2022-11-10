@@ -38,10 +38,16 @@ class ImageDataModule(pl.LightningDataModule):
 
         # Load the train and validation datasets
         self.train_set = load_image_dataset(
-            dataset_name, path, self.train_preproc, is_train=True,
+            dataset_name,
+            path,
+            self.train_preproc,
+            is_train=True,
         )
         self.valid_set = load_image_dataset(
-            dataset_name, path, self.val_preproc, is_train=False,
+            dataset_name,
+            path,
+            self.val_preproc,
+            is_train=False,
         )
 
     def train_dataloader(self) -> DataLoader:

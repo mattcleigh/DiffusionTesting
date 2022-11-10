@@ -18,6 +18,7 @@ from src.models.utils import log_wandb_upscale_images
 
 log = logging.getLogger(__name__)
 
+
 class UNetSuperResolution(pl.LightningModule):
     """A image to image model for doubling the resolution of an image"""
 
@@ -94,7 +95,7 @@ class UNetSuperResolution(pl.LightningModule):
             self.hparams.sched_conf.mattstools,
             opt,
             steps_per_epoch=len(self.trainer.datamodule.train_dataloader()),
-            max_epochs=self.trainer.max_epochs
+            max_epochs=self.trainer.max_epochs,
         )
 
         # Return the dict for the lightning trainer

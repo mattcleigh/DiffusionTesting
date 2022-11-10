@@ -1,0 +1,27 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=diff_train
+
+defaults:
+  - trainer: default.yaml
+  - model: diff_gen.yaml
+  - datamodule: celeba_generative.yaml
+  - loggers: default.yaml
+  - hydra: default.yaml
+  - paths: default.yaml
+  - callbacks: default.yaml
+  - _self_
+
+callbacks:
+  early_stopping:
+    monitor: valid/noise_loss
+  model_checkpoint:
+    monitor: valid/noise_loss
+
+project_name: image_generation # Determines output directory path
+network_name: ${now:%Y-%m-%d}_${now:%H-%M-%S} # Used for both saving and wandb
+train: True # Set False to skip model training
+test: False # Run test using best model from checkpoint callback
+ckpt_path: null # Checkpoint path to resume training
+seed: 12345 # For reproducibility

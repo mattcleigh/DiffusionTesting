@@ -13,7 +13,7 @@ from src.utils import instantiate_collection, log_hyperparameters, print_config_
 log = logging.getLogger(__name__)
 
 
-@hydra.main(version_base=None, config_path=root / "configs", config_name="train.yaml")  # type: ignore
+@hydra.main(version_base=None, config_path=root / "configs", config_name="train_diffusion_gen.yaml")  # type: ignore
 def main(cfg: DictConfig) -> None:
     """Run the script"""
 
@@ -38,8 +38,8 @@ def main(cfg: DictConfig) -> None:
     log.info("Instantiating the model")
     model = hydra.utils.instantiate(
         cfg.model,
-        inpt_dim = datamodule.get_image_shape(),
-        ctxt_dim = datamodule.get_ctxt_shape(),
+        inpt_dim=datamodule.get_image_shape(),
+        ctxt_dim=datamodule.get_ctxt_shape(),
     )
     log.info(model)
 
