@@ -7,14 +7,12 @@ from functools import partial
 import torch as T
 import torch.nn as nn
 from torch.nn.functional import avg_pool2d, interpolate
-from torchvision.transforms import Compose
 
 from mattstools.cnns import UNet
-from mattstools.torch_utils import get_sched
+from mattstools.torch_utils import get_sched, get_loss_fn
 
-from src.datamodules.images import ImageDataModule
 from src.models.utils import log_wandb_upscale_images
-
+import wandb
 
 log = logging.getLogger(__name__)
 
@@ -29,9 +27,9 @@ class UNetSuperResolution(pl.LightningModule):
         ctxt_dim: int,
         upscale_factor: int,
         unet_kwargs: DotMap,
-        loss_fn: nn.Module,
         optimizer: partial,
         sched_conf: dict,
+        loss_name: str = "mse",
     ) -> None:
         """Init for UNetSuperResolution
 
@@ -40,15 +38,15 @@ class UNetSuperResolution(pl.LightningModule):
             ctxt_dim: The size of the context vector for each image
             upscale_factor: The super resolution upscaling amount
             unet_kwargs: The UNet module to use as the base of this network
-            loss-fn: Loss function to use for the reconstruction error
             optimizer: Partially initialised optimizer
             sched_conf: The config for how to apply the scheduler
+            loss_name: Name of the loss funciton to apply
         """
         super().__init__()
         self.save_hyperparameters(logger=False)
 
         # Save specific class attributes
-        self.loss_fn = loss_fn
+        self.loss_fn = get_loss_fn(loss_name)
 
         # Initialise the main model making up this network
         self.unet = UNet(
@@ -59,11 +57,16 @@ class UNetSuperResolution(pl.LightningModule):
             **unet_kwargs,
         )
 
+        # Define the metrics for wandb (otherwise the min wont be stored!)
+        if wandb.run is not None:
+            wandb.define_metric("train/loss", summary="min")
+            wandb.define_metric("valid/loss", summary="min")
+
     def _step(self, sample: tuple) -> T.Tensor:
         """Unpacks sample, downsamples image, passes through net, returns recon loss"""
         images, ctxt = sample
         in_images = avg_pool2d(images, self.hparams.upscale_factor)
-        return self.loss_fn(self.forward(in_images, ctxt), images)
+        return self.loss_fn(self.forward(in_images, ctxt), images).mean()
 
     def forward(self, images: T.Tensor, ctxt: Optional[T.Tensor] = None) -> T.Tensor:
         """Takes an image, interpolates to upscale dims, and passes through net"""

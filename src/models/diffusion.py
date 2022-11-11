@@ -1,5 +1,6 @@
 from functools import partial
 import math
+import copy
 from typing import Mapping, Optional, Tuple
 import PIL.Image
 
@@ -160,13 +161,14 @@ class DiffusionGenerator(pl.LightningModule):
         )
 
         # A copy of the unet which will sync with an exponential moving average
-        self.ema_unet = UNet(
-            inpt_size=inpt_dim[1:],
-            inpt_channels=inpt_dim[0],
-            outp_channels=inpt_dim[0],
-            ctxt_dim=time_embedding_dim,
-            **unet_config,
-        )
+        self.ema_unet = copy.deepcopy(self.unet)
+
+        # Define the metrics for wandb (otherwise the min wont be stored!)
+        if wandb.run is not None:
+            wandb.define_metric("train/noise_loss", summary="min")
+            wandb.define_metric("train/image_loss", summary="min")
+            wandb.define_metric("valid/noise_loss", summary="min")
+            wandb.define_metric("valid/image_loss", summary="min")
 
     def denoise(
         self,
@@ -206,7 +208,7 @@ class DiffusionGenerator(pl.LightningModule):
         # Unpack the sample tuple (images come with labels/ctxt -> ignore)
         images, _ = sample
 
-        # Sample noise to perturb the images
+        # Sample from the gaussian latent space to perturb the images
         noises = T.randn_like(images)
 
         # Sample uniform random diffusion times and get the rates
@@ -285,37 +287,44 @@ class DiffusionGenerator(pl.LightningModule):
         step_size = 1 / n_steps
 
         # Do the very first step of the iteration using pure noise
-        noisy_images = initial_noise
-        diff_times = T.ones((num_images, 1), device=self.device)
-        signal_rates, noise_rates = diffusion_shedule(
-            diff_times.view(-1, 1, 1, 1), **self.diff_shedule_config
-        )
-        pred_noises, pred_images = self.denoise(
-            noisy_images, diff_times, signal_rates, noise_rates
+        next_noisy_images = initial_noise
+        next_diff_times = T.ones((num_images, 1), device=self.device)
+        next_signal_rates, next_noise_rates = diffusion_shedule(
+            next_diff_times.view(-1, 1, 1, 1), **self.diff_shedule_config
         )
 
         # Cycle through the remainder of all the steps
-        for step in tqdm(range(1, n_steps), "generating"):
+        for step in tqdm(range(n_steps), "generating"):
 
-            # Make a single backward step using the predicted clean image
-            diff_times = T.ones((num_images, 1), device=self.device) - step * step_size
-            signal_rates, noise_rates = diffusion_shedule(
-                diff_times.view(-1, 1, 1, 1), **self.diff_shedule_config
-            )
+            # Update with the previous 'next' step
+            noisy_images = next_noisy_images
+            diff_times = next_diff_times
+            signal_rates = next_signal_rates
+            noise_rates = next_noise_rates
 
-            ## Update the noisy images using the reverse ddim step
-            if clip_predictions:
-                pred_images.clamp_(-1, 1)
-            noisy_images = signal_rates * pred_images + noise_rates * pred_noises
-
-            # Seperate the image out into the noise and final prediction
+            # Apply the denoise step to get X_0 and expected noise
             pred_noises, pred_images = self.denoise(
                 noisy_images, diff_times, signal_rates, noise_rates
             )
 
+            # Get the next predicted components using the next signal and noise rates
+            next_diff_times = diff_times - step_size
+            next_signal_rates, next_noise_rates = diffusion_shedule(
+                next_diff_times.view(-1, 1, 1, 1), **self.diff_shedule_config
+            )
+
+            # Clamp the predicted X_0 for stability
+            if clip_predictions:
+                pred_images.clamp_(-1, 1)
+
+            # Remix the predicted components to go from estimated X_0 -> X_{t-1}
+            next_noisy_images = (
+                next_signal_rates * pred_images + next_noise_rates * pred_noises
+            )
+
             # Keep track of the diffusion evolution
             if keep_all:
-                all_image_stages.append(noisy_images)
+                all_image_stages.append(next_noisy_images)
 
         return pred_images, all_image_stages
 

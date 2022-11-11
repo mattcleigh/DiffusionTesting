@@ -1,6 +1,6 @@
 _target_: src.models.diffusion.DiffusionGenerator
 
-time_embedding_dim: 64
+time_embedding_dim: 32
 loss_name: mae
 ema_sync: 0.999
 
@@ -12,15 +12,15 @@ cosine_config:
 
 # How quickly the noise takes over the image
 diff_shedule_config:
-  max_sr: 0.02
-  min_sr: 0.95
+  max_sr: 0.95
+  min_sr: 0.02
 
 # The configuration of the UNet
 unet_config:
   min_size: 8
   attn_below: 16
   start_channels: 32
-  max_channels: 256
+  max_channels: 128
   resnet_kwargs:
     act: silu
     nrm_groups: 32
@@ -34,10 +34,9 @@ unet_config:
 
 # Full configuration for the model optimizer
 optimizer:
-  _target_: torch.optim.AdamW
+  _target_: torch.optim.Adam
   _partial_: true
   lr: 5.0e-4
-  weight_decay: 1.0e-4
 
 # Config dicts to pass to mattstools and pytorch lightning
 sched_config:

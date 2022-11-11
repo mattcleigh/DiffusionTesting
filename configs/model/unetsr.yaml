@@ -3,8 +3,8 @@ _target_: src.models.unetsr.UNetSuperResolution
 upscale_factor: 8
 
 unet_kwargs:
-  min_size: 16
-  attn_below: 32
+  min_size: 8
+  attn_below: 16
   start_channels: 32
   max_channels: 128
   resnet_kwargs:
@@ -14,9 +14,12 @@ unet_kwargs:
   attn_kwargs:
     num_heads: 4
     nrm_groups: 32
+  ctxt_embed_kwargs:
+    hddn_dim: 64
+    outp_dim: 64
+    act_h: lrlu
 
-loss_fn:
-  _target_: torch.nn.MSELoss
+loss_name: mse
 
 # Full configuration for the model optimizer
 optimizer:
@@ -28,7 +31,7 @@ optimizer:
 sched_conf:
   mattstools:
     name: warmup
-    num_steps: 512
+    num_steps: 1024
   lightning:
     monitor: valid/loss
     interval: step
