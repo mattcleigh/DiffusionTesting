@@ -303,7 +303,7 @@ class DiffusionGenerator(pl.LightningModule):
                 diff_times.view(-1, 1, 1, 1), **self.diff_shedule_config
             )
 
-            ## Update the noisy immages using the reverse ddim step
+            ## Update the noisy images using the reverse ddim step
             if clip_predictions:
                 pred_images.clamp_(-1, 1)
             noisy_images = signal_rates * pred_images + noise_rates * pred_noises

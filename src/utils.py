@@ -2,6 +2,7 @@
 A collection of misculaneous functions usefull for the lighting/hydra template
 """
 
+import os
 from pathlib import Path
 import rich
 import rich.tree
@@ -16,9 +17,22 @@ from pytorch_lightning import Trainer, LightningModule
 
 log = logging.getLogger(__name__)
 
+@rank_zero_only
+def reload_original_config(cfg: OmegaConf) -> OmegaConf:
+    """Replaces the cfg with the one stored at the checkpoint location
+
+    Will also set the chkpt_dir to the latest version of the 'last' checkpoint
+
+    """
+    orig_cfg = OmegaConf.load(Path("full_config.yaml"))
+    orig_cfg.ckpt_path = sorted(
+        Path.cwd().glob("checkpoints/last*.ckpt"), key=os.path.getmtime
+    )[-1]
+    return orig_cfg
+
 
 @rank_zero_only
-def print_config_tree(
+def print_and_save_config(
     cfg: DictConfig,
     print_order: Sequence[str] = (
         "datamodule",
@@ -28,10 +42,18 @@ def print_config_tree(
         "trainer",
         "paths",
     ),
-    resolve: bool = False,
-    save_to_file: bool = False,
+    resolve: bool = True,
 ) -> None:
     """Prints content of DictConfig using Rich library and its tree structure.
+
+    Also saves the config to the output directory.
+    This is necc ontop of hydra's default conf.yaml as it will resolve the entries
+    allowing one to resume jobs identically with elements such as ${now:%H-%M-%S}.
+
+    Furthermore, hydra does not allow resuming a previous job from the same dir.
+    The work around is reload_original_config but that will fail as hydra overwites
+    the default config.yaml file on startup, so this backup is needed for resuming.
+
     Args:
         cfg: Configuration composed by Hydra.
         print_order: Determines in what order config components are printed.
@@ -47,7 +69,7 @@ def print_config_tree(
     # add fields from `print_order` to queue
     for field in print_order:
         queue.append(field) if field in cfg else log.warning(
-            f"Field '{field}' not found in config. Skipping '{field}' config printing..."
+            f"Field '{field}' not found in config. Skipping '{field}' printing..."
         )
 
     # add all the other fields to queue (not specified in `print_order`)
@@ -71,9 +93,7 @@ def print_config_tree(
     rich.print(tree)
 
     # save config tree to file
-    if save_to_file:
-        with open(Path(cfg.paths.output_dir, "config_tree.log"), "w") as file:
-            rich.print(tree, file=file)
+    OmegaConf.save(cfg, Path(cfg.paths.full_path, "full_config.yaml"), resolve=True)
 
 
 @rank_zero_only

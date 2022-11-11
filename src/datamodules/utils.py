@@ -74,6 +74,13 @@ def load_image_dataset(
             download=True,
             transform=preproc,
         )
+    elif name == "flowers":
+        dataset = tv.datasets.Flowers102(
+            root=path,
+            split="train" if is_train else "val",
+            download=True,
+            transform=preproc,
+        )
     else:
         raise ValueError(f"Unknown image dataset name: {name}")
 

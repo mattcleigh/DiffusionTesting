@@ -10,4 +10,3 @@ job:
 # Interpolated variables output directory, generated dynamically on each run
 run:
   dir: ${paths.full_path}
-

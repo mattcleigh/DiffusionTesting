@@ -1,0 +1,23 @@
+_target_: src.datamodules.images.ImageDataModule
+
+dataset_name: celeba
+
+train_transforms: # Images will be bound between -1 and 1
+  shift_scale: [0.5, 0.5]
+  center_crop: 128
+  resize: 64
+  rand_flip: True
+
+val_transforms: # Same as above but without random augmentations
+  shift_scale: [0.5, 0.5]
+  center_crop: 128
+  resize: 64
+
+loader_kwargs:
+  pin_memory: true
+  batch_size: 128
+  num_workers: 4
+  drop_last: True
+
+# Interpolated variables
+path: ${paths.data_dir}
