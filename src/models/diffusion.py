@@ -294,7 +294,7 @@ class DiffusionGenerator(pl.LightningModule):
         )
 
         # Cycle through the remainder of all the steps
-        for step in tqdm(range(n_steps), "generating"):
+        for step in tqdm(range(n_steps), "generating", leave=False):
 
             # Update with the previous 'next' step
             noisy_images = next_noisy_images

@@ -1,6 +1,6 @@
 _target_: src.datamodules.images.ImageDataModule
 
-dataset_name: flowers
+dataset_name: lsun
 
 train_transforms: # Images will be bound between -1 and 1
   shift_scale: [0.5, 0.5]

@@ -1,7 +1,6 @@
 from typing import Union, Tuple
 import torchvision as tv
-from torchvision.datasets import CIFAR10, MNIST, ImageNet, CelebA
-
+from torchvision.datasets import CIFAR10, MNIST, ImageNet, CelebA, LSUN
 
 def preprocessing(
     to_tens: bool = True,
@@ -53,32 +52,31 @@ def load_image_dataset(
     """Returns an image train and validation dataset after applying some transforms"""
 
     if name == "cifar10":
-        dataset = tv.datasets.CIFAR10(
+        dataset = CIFAR10(
             root=path, train=is_train, download=True, transform=preproc
         )
     elif name == "mnist":
-        dataset = tv.datasets.MNIST(
+        dataset = MNIST(
             root=path, train=is_train, download=True, transform=preproc
         )
     elif name == "imagenet":
-        dataset = tv.datasets.ImageNet(
+        dataset = ImageNet(
             root="data",
             split="train" if is_train else "val",
             download=True,
             transform=preproc,
         )
     elif name == "celeba":
-        dataset = tv.datasets.CelebA(
+        dataset = CelebA(
             root=path,
             split="train" if is_train else "valid",
             download=True,
             transform=preproc,
         )
-    elif name == "flowers":
-        dataset = tv.datasets.Flowers102(
+    elif name == "lsun":
+        dataset = LSUN(
             root=path,
-            split="train" if is_train else "val",
-            download=True,
+            classes=["dog_train", "cat_train"],
             transform=preproc,
         )
     else:
