@@ -12,8 +12,7 @@ from torchvision.utils import make_grid
 import pytorch_lightning as pl
 
 from mattstools.cnns import UNet
-from mattstools.modules import DenseNetwork
-from mattstools.torch_utils import get_loss_fn, to_np, get_sched
+from mattstools.torch_utils import get_loss_fn, get_sched
 
 import wandb
 

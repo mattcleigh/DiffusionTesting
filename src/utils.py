@@ -28,6 +28,12 @@ def reload_original_config(cfg: OmegaConf) -> OmegaConf:
     orig_cfg.ckpt_path = sorted(
         Path.cwd().glob("checkpoints/last*.ckpt"), key=os.path.getmtime
     )[-1]
+
+    # Set the wandb logger to attempt to resume the job
+    if hasattr(cfg, "loggers"):
+        if hasattr(cfg.loggers, "wandb"):
+            cfg.loggers.wandb.resume = True
+
     return orig_cfg
 
 
