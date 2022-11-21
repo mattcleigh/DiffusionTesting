@@ -1,49 +1,54 @@
 _target_: src.models.diffusion.DiffusionGenerator
 
-time_embedding_dim: 64
 loss_name: mae
 ema_sync: 0.999
 
 # How time information is injected into the UNet
 cosine_config:
+  outp_dim: 64
   min_value: 0
   max_value: 1
   frequency_scaling: exponential
 
 # How quickly the noise takes over the image
 diff_shedule_config:
-  max_sr: 1.00
+  max_sr: 0.99
   min_sr: 0.01
+
+# To adaptively normalise the data
+normaliser_config:
+  max_n: 200000
+  extra_dims: [1, 2] # Img = ch, height, width -> normalise over last two
 
 # The configuration of the UNet
 unet_config:
-  min_size: 4
-  attn_below: 8
+  min_size: 8
+  attn_below: 16
   start_channels: 32
   max_channels: 256
   resnet_kwargs:
     act: silu
     nrm_groups: 32
-    drp: 0.1
   attn_kwargs:
-    num_heads: 8
+    num_heads: 4
     nrm_groups: 32
   ctxt_embed_kwargs:
-    hddn_dim: 128
-    outp_dim: 128
+    hddn_dim: 256
     act_h: silu
+    do_out: False
 
 # Full configuration for the model optimizer
 optimizer:
   _target_: torch.optim.Adam
   _partial_: true
-  lr: 1.0e-3
+  lr: 1.0e-4
 
 # Config dicts to pass to mattstools and pytorch lightning
 sched_config:
   mattstools:
-    name: warmup
-    num_steps: 20000
+    name: onecycle
+    div_factor: 50
+    final_div_factor: 1000
   lightning:
     monitor: valid/noise_loss
     interval: step

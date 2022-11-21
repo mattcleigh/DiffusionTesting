@@ -13,94 +13,10 @@ import pytorch_lightning as pl
 
 from mattstools.cnns import UNet
 from mattstools.torch_utils import get_loss_fn, get_sched
+from mattstools.modules import IterativeNormLayer
+from mattstools.diffusion import CosineEncoding, DiffusionSchedule
 
 import wandb
-
-
-def cosine_encoding(
-    x: T.Tensor,
-    out_dim: int,
-    min_value: float = 0.0,
-    max_value: float = 1.0,
-    frequency_scaling: str = "exponential",
-) -> T.Tensor:
-    """Computes a positional cosine encodings with an increasing series of frequencies
-
-    The frequencies either increase linearly or exponentially (default).
-    The latter is good for when max_value is large and extremely high sensitivity to the
-    input is required.
-    If inputs greater than the max value are provided, the outputs become degenerate.
-    If inputs smaller than the min value are provided, the inputs the the cosine will
-    be both positive and negative, which may lead degenerate outputs.
-
-    Always make sure that the min and max bounds are not exceeded!
-
-    Args:
-        x: The input, the final dimension is encoded. If 1D then it will be unqueezed
-        out_dim: The dimension of the output encoding
-        min_value: Added to x (and max) as cosine embedding works with positive inputs
-        max_value: The maximum expected value, sets the scale of the lowest frequency
-        frequency_scaling: Either 'linear' or 'exponential'
-
-    Returns:
-        The cosine embeddings of the input using (out_dim) many frequencies
-    """
-
-    # Unsqueeze if final dimension is flat
-    if x.shape[-1] != 1:
-        x = x.unsqueeze(-1)
-
-    # Check the the bounds are obeyed
-    if T.any(x > max_value):
-        print("Warning! Passing values to cosine_encoding encoding that exceed max!")
-    if T.any(x < min_value):
-        print("Warning! Passing values to cosine_encoding encoding below min!")
-
-    # Calculate the various frequencies
-    if frequency_scaling == "exponential":
-        freqs = T.arange(out_dim, device=x.device).exp()
-    elif frequency_scaling == "linear":
-        freqs = T.arange(1, out_dim + 1, device=x.device)
-    else:
-        raise RuntimeError(f"Unrecognised frequency scaling: {frequency_scaling}")
-
-    return T.cos((x + min_value) * freqs * math.pi / (max_value + min_value))
-
-
-def diffusion_shedule(
-    diff_time: T.Tensor, max_sr: float = 1, min_sr: float = 1e-8
-) -> Tuple[T.Tensor, T.Tensor]:
-    """Calculates the signal and noise rate for any point in the diffusion processes
-
-    Using continuous diffusion times between 0 and 1 which make switching between
-    different numbers of diffusion steps between training and testing much easier.
-    Returns only the values needed for the jump forward diffusion step and the reverse
-    DDIM step.
-    These are sqrt(alpha_bar) and sqrt(1-alphabar) which are called the signal_rate
-    and noise_rate respectively.
-
-    The jump forward diffusion process is simply a weighted sum of:
-        input * signal_rate + eps * noise_rate
-
-    Uses a cosine annealing schedule as proposed in
-    Proposed in https://arxiv.org/abs/2102.09672
-
-    Args:
-        diff_time: The time used to sample the diffusion scheduler
-            Output will match the shape
-            Must be between 0 and 1
-        max_sr: The initial rate at the first step
-        min_sr: How much signal is preserved at end of diffusion
-            (can't be zero due to log)
-    """
-
-    ## Use cosine annealing, which requires switching from times -> angles
-    start_angle = math.acos(max_sr)
-    end_angle = math.acos(min_sr)
-    diffusion_angles = start_angle + diff_time * (end_angle - start_angle)
-    signal_rates = T.cos(diffusion_angles)
-    noise_rates = T.sin(diffusion_angles)
-    return signal_rates, noise_rates
 
 
 class DiffusionGenerator(pl.LightningModule):
@@ -115,7 +31,7 @@ class DiffusionGenerator(pl.LightningModule):
         *,
         inpt_dim: list,
         ctxt_dim: int,
-        time_embedding_dim: int,
+        normaliser_config: Mapping,
         cosine_config: Mapping,
         diff_shedule_config: Mapping,
         unet_config: Mapping,
@@ -128,7 +44,7 @@ class DiffusionGenerator(pl.LightningModule):
         Args:
             inpt_dim: The input dimension of the images
             ctxt_dim: The size of the context vector for each image (ignored)
-            time_embedding_dim: Embedding size of the diffusion time encoding
+            normaliser_config: For the normalisation layer in the model
             cosine_config: For defining the cosine embedding arguments
             diff_shedule_config: For defining the diffusion scheduler
             time_embed_config: Keyword arguments for the Dense time embedder
@@ -141,8 +57,7 @@ class DiffusionGenerator(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters(logger=False)
 
-        # Load the appropriate loss function
-        self.time_embedding_dim = time_embedding_dim
+        # Class attributes
         self.loss_fn = get_loss_fn(loss_name)
         self.inpt_dim = inpt_dim
         self.cosine_config = cosine_config
@@ -150,12 +65,19 @@ class DiffusionGenerator(pl.LightningModule):
         self.ema_sync = ema_sync
         self.register_buffer("fixed_noise", T.randn((32, *self.inpt_dim)))
 
+        # The learnable normalisation layer
+        self.normaliser = IterativeNormLayer(self.inpt_dim, **normaliser_config)
+
+        # The encoder and scheduler needed for diffusion
+        self.diff_sched = DiffusionSchedule(**diff_shedule_config)
+        self.time_encoder = CosineEncoding(**cosine_config)
+
         # The denoising UNet
         self.unet = UNet(
             inpt_size=inpt_dim[1:],
             inpt_channels=inpt_dim[0],
             outp_channels=inpt_dim[0],
-            ctxt_dim=time_embedding_dim,
+            ctxt_dim=self.time_encoder.outp_dim,
             **unet_config,
         )
 
@@ -187,11 +109,7 @@ class DiffusionGenerator(pl.LightningModule):
             network = self.ema_unet
 
         # Encode the times
-        encoded_times = cosine_encoding(
-            diffusion_times,
-            out_dim=self.time_embedding_dim,
-            **self.cosine_config,
-        )
+        encoded_times = self.time_encoder(diffusion_times)
 
         # Use the selected network to esitmate the noise present in the image
         pred_noises = network(noisy_images, ctxt=encoded_times)
@@ -207,14 +125,15 @@ class DiffusionGenerator(pl.LightningModule):
         # Unpack the sample tuple (images come with labels/ctxt -> ignore)
         images, _ = sample
 
+        # Pass through the normaliser
+        images = self.normaliser(images)
+
         # Sample from the gaussian latent space to perturb the images
         noises = T.randn_like(images)
 
         # Sample uniform random diffusion times and get the rates
         diffusion_times = T.rand(size=(len(images), 1), device=self.device)
-        signal_rates, noise_rates = diffusion_shedule(
-            diffusion_times.view(-1, 1, 1, 1), **self.diff_shedule_config
-        )
+        signal_rates, noise_rates = self.diff_sched(diffusion_times.view(-1, 1, 1, 1))
 
         # Mix the signal and noise according to the diffusion equation
         noisy_images = signal_rates * images + noise_rates * noises
@@ -234,6 +153,8 @@ class DiffusionGenerator(pl.LightningModule):
         self._sync_ema_network()
         self.log("train/noise_loss", noise_loss)
         self.log("train/image_loss", image_loss)
+        self.log("means", self.normaliser.means.mean())
+        self.log("vars", self.normaliser.vars.mean())
         return noise_loss
 
     def validation_step(self, sample: tuple, _batch_idx: int) -> T.Tensor:
@@ -242,7 +163,7 @@ class DiffusionGenerator(pl.LightningModule):
         self.log("valid/image_loss", image_loss)
         return noise_loss
 
-    def _sync_ema_network(self):
+    def _sync_ema_network(self) -> None:
         """Updates the Exponential Moving Average Network"""
         with T.no_grad():
             for params, ema_params in zip(
@@ -259,7 +180,7 @@ class DiffusionGenerator(pl.LightningModule):
         n_steps: int = 50,
         keep_all: bool = False,
         num_images: int = 1,
-        clip_predictions=True,
+        clip_predictions: Optional[tuple] = None,
     ) -> Tuple[T.Tensor, list]:
         """Apply the full reverse process to noise to generate a batch of images
 
@@ -271,9 +192,7 @@ class DiffusionGenerator(pl.LightningModule):
                 Can be memory heavy for large batches
             num_images: How many images to generate
                 Ignored if initial_noise is provided
-            clip_predictions: Clip the predicted image at each stage too [-1, 1]
-                Stabalises the generation and improves quality as long as the
-                images are preprocessed to [-1, 1]
+            clip_predictions: Can stabalise generation by clipping the outputs
         """
 
         # Get the initial noise for generation and the number of images
@@ -288,8 +207,8 @@ class DiffusionGenerator(pl.LightningModule):
         # Do the very first step of the iteration using pure noise
         next_noisy_images = initial_noise
         next_diff_times = T.ones((num_images, 1), device=self.device)
-        next_signal_rates, next_noise_rates = diffusion_shedule(
-            next_diff_times.view(-1, 1, 1, 1), **self.diff_shedule_config
+        next_signal_rates, next_noise_rates = self.diff_sched(
+            next_diff_times.view(-1, 1, 1, 1)
         )
 
         # Cycle through the remainder of all the steps
@@ -308,13 +227,13 @@ class DiffusionGenerator(pl.LightningModule):
 
             # Get the next predicted components using the next signal and noise rates
             next_diff_times = diff_times - step_size
-            next_signal_rates, next_noise_rates = diffusion_shedule(
-                next_diff_times.view(-1, 1, 1, 1), **self.diff_shedule_config
+            next_signal_rates, next_noise_rates = self.diff_sched(
+                next_diff_times.view(-1, 1, 1, 1)
             )
 
             # Clamp the predicted X_0 for stability
-            if clip_predictions:
-                pred_images.clamp_(-1, 1)
+            if clip_predictions is not None:
+                pred_images.clamp_(*clip_predictions)
 
             # Remix the predicted components to go from estimated X_0 -> X_{t-1}
             next_noisy_images = (
@@ -323,7 +242,9 @@ class DiffusionGenerator(pl.LightningModule):
 
             # Keep track of the diffusion evolution
             if keep_all:
-                all_image_stages.append(next_noisy_images)
+                all_image_stages.append(self.normaliser.reverse(next_noisy_images))
+
+        pred_images = self.normaliser.reverse(pred_images)
 
         return pred_images, all_image_stages
 
@@ -335,7 +256,7 @@ class DiffusionGenerator(pl.LightningModule):
             return
 
         # Get the generated samples
-        outputs, _ = self.generate(initial_noise=self.fixed_noise, n_steps=64)
+        outputs, _ = self.generate(initial_noise=self.fixed_noise, n_steps=50)
 
         # Create the wandb table and add the data
         gen_table = wandb.Table(columns=["idx", "output"])

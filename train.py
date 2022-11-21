@@ -37,13 +37,13 @@ def main(cfg: DictConfig) -> None:
         inpt_dim=datamodule.get_image_shape(),
         ctxt_dim=datamodule.get_ctxt_shape(),
     )
-    log.info(model)
 
     log.info("Instantiating all callbacks")
     callbacks = instantiate_collection(cfg.callbacks)
 
     log.info("Instantiating the loggers")
     loggers = instantiate_collection(cfg.loggers)
+    log.info(model)
 
     log.info("Instantiating the trainer")
     trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=loggers)
